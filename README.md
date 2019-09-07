@@ -1,6 +1,8 @@
 # Apache Beam Spatial
 
-Example on how to use a tile (Uber H3) system to generate 2D-aware sessions in Apache Beam
+Example on how to use a tile system (Uber H3) to generate 2D-aware sessions in Apache Beam
+
+Full explanation for the code in this repo is available in the article [Time/Space Sessions in Apache Beam](https://medium.com/@davide.anastasia/time-space-sessions-in-apache-beam-b402cdf8470) on Medium
 
 ## Examples
 
