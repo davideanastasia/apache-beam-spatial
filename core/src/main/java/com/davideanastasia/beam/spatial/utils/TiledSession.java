@@ -67,59 +67,59 @@ public class TiledSession {
     public <T extends HasPoint & HasTimestamp> TiledSession add(T input) throws Exception {
         H3Core h3 = H3Core.newInstance();
 
-        Instant __start;
+        Instant outputStartTs;
         if (start == null) {
-            __start = input.getTs();
+            outputStartTs = input.getTs();
         } else {
-            __start = new Instant(Math.min(start.getMillis(), input.getTs().getMillis()));
+            outputStartTs = new Instant(Math.min(start.getMillis(), input.getTs().getMillis()));
         }
 
-        Instant __end;
+        Instant outputEndTs;
         if (end == null) {
-            __end = input.getTs();
+            outputEndTs = input.getTs();
         } else {
-            __end = new Instant(Math.max(end.getMillis(), input.getTs().getMillis()));
+            outputEndTs = new Instant(Math.max(end.getMillis(), input.getTs().getMillis()));
         }
 
-        String hexAddr = h3.geoToH3Address(
+        String outputHexAddr = h3.geoToH3Address(
             input.getPoint().getLatitude(),
             input.getPoint().getLongitude(),
             8);
 
         if (this.hexAddr != null) {
-            Preconditions.checkArgument(hexAddr.equals(this.hexAddr));
+            Preconditions.checkArgument(outputHexAddr.equals(this.hexAddr));
         }
 
         return new TiledSession(
-            __start,
-            __end,
-            hexAddr,
+            outputStartTs,
+            outputEndTs,
+            outputHexAddr,
             count + 1);
     }
 
     public TiledSession merge(TiledSession other) {
-        Instant __start;
+        Instant outputStartTs;
         if (this.start == null || other.start == null) {
-            __start = MoreObjects.firstNonNull(this.start, other.start);
+            outputStartTs = MoreObjects.firstNonNull(this.start, other.start);
         } else {
-            __start = new Instant(Math.min(start.getMillis(), other.start.getMillis()));
+            outputStartTs = new Instant(Math.min(start.getMillis(), other.start.getMillis()));
         }
 
-        Instant __end;
+        Instant outputEndTs;
         if (this.end == null || other.end == null) {
-            __end = MoreObjects.firstNonNull(this.end, other.end);
+            outputEndTs = MoreObjects.firstNonNull(this.end, other.end);
         } else {
-            __end = new Instant(Math.max(end.getMillis(), other.end.getMillis()));
+            outputEndTs = new Instant(Math.max(end.getMillis(), other.end.getMillis()));
         }
 
-        if (this.start != null && other.start != null) {
-            Preconditions.checkArgument(hexAddr.equals(this.hexAddr));
+        if (this.hexAddr != null && other.hexAddr != null) {
+            Preconditions.checkArgument(hexAddr.equals(other.hexAddr));
         }
 
         return new TiledSession(
-            __start,
-            __end,
-            other.hexAddr,
+            outputStartTs,
+            outputEndTs,
+            MoreObjects.firstNonNull(hexAddr, other.hexAddr),
             count + other.count);
     }
 
@@ -130,12 +130,13 @@ public class TiledSession {
         TiledSession that = (TiledSession) o;
         return count == that.count &&
             start.isEqual(that.start) &&
-            end.isEqual(that.end);
+            end.isEqual(that.end) &&
+            Objects.equals(hexAddr, that.hexAddr);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(start, end, count);
+        return Objects.hash(start, end, hexAddr, count);
     }
 
     public String toString() {
