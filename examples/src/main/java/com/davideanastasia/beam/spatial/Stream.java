@@ -18,12 +18,13 @@
 package com.davideanastasia.beam.spatial;
 
 import com.davideanastasia.beam.spatial.bigquery.TiledSessionTableSpec;
+import com.davideanastasia.beam.spatial.demo.OnTime;
+import com.davideanastasia.beam.spatial.demo.ToJson;
 import com.davideanastasia.beam.spatial.engine.TiledSessions;
 import com.davideanastasia.beam.spatial.entities.Point;
 import com.davideanastasia.beam.spatial.entities.TaxiPoint;
 import com.davideanastasia.beam.spatial.utils.*;
 import com.google.api.services.bigquery.model.TableReference;
-import com.google.api.services.bigquery.model.TableRow;
 import com.google.api.services.bigquery.model.TableSchema;
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.coders.BigEndianIntegerCoder;
@@ -35,7 +36,9 @@ import org.apache.beam.sdk.io.gcp.pubsub.PubsubIO;
 import org.apache.beam.sdk.options.Description;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
 import org.apache.beam.sdk.transforms.*;
+import org.apache.beam.sdk.transforms.windowing.AfterProcessingTime;
 import org.apache.beam.sdk.transforms.windowing.AfterWatermark;
+import org.apache.beam.sdk.transforms.windowing.Repeatedly;
 import org.apache.beam.sdk.transforms.windowing.Window;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
@@ -46,11 +49,17 @@ public class Stream {
     private static final String TIMESTAMP_ATTRIBUTE_KEY = "ts_attr_key";
 
     public interface Options extends GcpOptions {
-        @Description("Pubsub Topic Name")
-        String getTopicName();
+        @Description("Pubsub Input Topic Name")
+        String getInputTopicName();
 
         @SuppressWarnings("unused")
-        void setTopicName(String value);
+        void setInputTopicName(String value);
+
+        @Description("Pubsub Output Topic Name")
+        String getOutputTopicName();
+
+        @SuppressWarnings("unused")
+        void setOutputTopicName(String value);
     }
 
     public static void main(String[] args) {
@@ -68,20 +77,27 @@ public class Stream {
         PCollection<KV<Integer, TiledSession>> taxiPoints = pipeline
             .apply("Input", PubsubIO.readStrings()
                 .withTimestampAttribute(TIMESTAMP_ATTRIBUTE_KEY)
-                .fromTopic(options.getTopicName()))
+                .fromTopic(options.getInputTopicName()))
             .apply("StringToTaxiPoint", TaxiPoints.parse())
             .apply("RemoveZeros", Points.removeZeros())
             .apply("RemoveOutOfBoundaries", Points.removeOutOfBoundary())
             .apply("ToKV", WithKeys.of(TaxiPoint::getId))
             .setCoder(KvCoder.of(BigEndianIntegerCoder.of(), TaxiPoint.TaxiPointCoder.of()))
             .apply("TiledSessions", Window.<KV<Integer, TaxiPoint>>into(TiledSessions.<TaxiPoint>withGapDuration(Duration.standardMinutes(6)).withStrategy(TiledSessions.SortingStrategy.SPACE_AND_TIME))
-                .triggering(AfterWatermark.pastEndOfWindow())
-                .withAllowedLateness(Duration.ZERO)
-                .discardingFiredPanes())
+                .triggering(Repeatedly
+                    .forever(AfterProcessingTime
+                        .pastFirstElementInPane()
+                        .plusDelayOf(Duration.standardSeconds(60)))
+                    .orFinally(AfterWatermark.pastEndOfWindow()))
+                .accumulatingFiredPanes()
+                .withAllowedLateness(Duration.ZERO))
             .apply("TiledSessionCombine", Combine.perKey(new TiledSessionCombineFn<>()))
             .setCoder(KvCoder.of(BigEndianIntegerCoder.of(), TiledSessionCoder.of()));
 
-        taxiPoints.apply("Output", BigQueryIO.<KV<Integer, TiledSession>>write()
+        // save to BigQuery
+        taxiPoints
+            .apply(OnTime.of())
+            .apply("Output", BigQueryIO.<KV<Integer, TiledSession>>write()
             .to(new TableReference()
                 .setProjectId(options.getProject())
                 .setDatasetId("t_drive_data")
@@ -89,6 +105,11 @@ public class Stream {
             .withFormatFunction(TiledSessionTableSpec::toTableRow)
             .withSchema(new TableSchema().setFields(TiledSessionTableSpec.SCHEMA))
             .withWriteDisposition(BigQueryIO.Write.WriteDisposition.WRITE_APPEND));
+
+        // save to pubsub
+        taxiPoints
+            .apply(ToJson.of())
+            .apply(PubsubIO.writeStrings().to(options.getOutputTopicName()));
 
         pipeline.run();
     }

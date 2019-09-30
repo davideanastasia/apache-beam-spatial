@@ -66,6 +66,7 @@ public class TiledSessions<T extends HasPoint> extends WindowFn<KV<?, T>, TiledI
 
     @Override
     public Collection<TiledIntervalWindow> assignWindows(AssignContext c) throws Exception {
+        // TODO: expensive to compute at every assignWindows... can it be moved somewhere else?
         H3Core h3 = H3Core.newInstance();
 
         Point point = c.element().getValue().getPoint();

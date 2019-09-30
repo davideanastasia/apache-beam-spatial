@@ -90,9 +90,9 @@ public class TaxiPoint implements HasPoint, HasTimestamp {
             String[] tokens = data.split(",", -1);
 
             int taxiId = Integer.parseInt(tokens[0]);
-            float latitude = Float.parseFloat(tokens[3]);
-            float longitude = Float.parseFloat(tokens[2]);
             Instant instant = Instant.parse(tokens[1], FMT);
+            float longitude = Float.parseFloat(tokens[2]);
+            float latitude = Float.parseFloat(tokens[3]);
 
             return new TaxiPoint(taxiId, instant, new Point(latitude, longitude));
         } catch (Exception ex) {
